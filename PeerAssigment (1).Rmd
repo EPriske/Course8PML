@@ -1,0 +1,144 @@
+---
+title: "Practical Machine Learning Peer Assignment"
+author: "ErickP"
+date: "16 11 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Summary
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+The main goal of this assigment is trying to predict if the subject performed an excersice correctly or incorrectly, so this is a binary prediction. Using our knowledge adquired on this course we will create a model that gets the best accuracy.
+
+We will follow what we have learn until now, we divide the project in 5:
+  
+    1)Loading required libraries and data.
+    2)Exploratory data analysis.
+    3)Model creation.
+    4)Model analysis and prediction.
+    5)Conclusions.
+    
+### 1)Loading required libraries and data.
+
+We downloaded the official data from Groupware, they collected the data and made it available for this study.
+
+http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har
+
+Then we load it into R-Studio and save it into two variables, Training and Testing.
+
+```{r}
+library(caret)
+library(ggplot2)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+
+Training <- read.csv("pml-training.csv",na.strings = c("NA","#DIV/0!"))
+Test <- read.csv("pml-testing.csv",na.strings = c("NA","#DIV/0!"))
+```
+
+### 2)Exploratory data analysis.
+
+After loading the data now we want to do an exploratory data analysis to understand with that type of data we are working with, see the classes of our variables, and start thinking how we will create our model.
+
+```{r}
+head(Training)
+str(Training)
+```
+
+We have 19622 observations of 160 variables, but after exploring more we realize that we have a lot of variables with N/A values, we will remove them from our dataset because they will not be used. We will do the same to the Test dataset.
+
+```{r}
+Training <- Filter(function(x) all(!is.na(x)), Training)
+Test <- Filter(function(x) all(!is.na(x)), Test)
+```
+
+The new data sets have now 60 variables and none of the variables have NAs values. After analyzing the remaining variables we found out that the first 7 variables are not related with the analysis and are more classifiers like the name, time stamps, index of the variable, this ones will not give more information into our model so we decided to remove them too.
+
+```{r}
+Training <- Training[,-c(1:7)]
+Test <- Test[,-c(1:7)]
+```
+
+Now we have 19,622 observations of 53 variables, now we want to see what variables are more correlated to each other. First we need to transform the Training$classe to a factor and this will be the variable we want to predict.
+
+```{r}
+Training$classe <- as.factor(Training$classe)
+#corr_cross(Training,
+  #max_pvalue = 0.05, # display only significant correlations (at 5% level)
+  #top = 10 # display top 10 couples of variables (by correlation coefficient)
+#)
+#Please see Figure 1.1 in the repertory, since I had a problem loading the lares library
+#and this grap is done with that library.
+```
+
+### 3) Model Creation.
+
+With this correlation graph, we know which variables are the most correlated and which we will select for our model. We will start by removing all other variables and only focusing in the top 10 of the variables that are correlated.
+
+```{r}
+set.seed(99999)
+modl <- c("classe", "roll_belt", "gyros_forearm_z", "accel_belt_z", "accel_belt_y",
+          "accel_belt_x", "total_accel_belt", "gyros_dumbbell_x",
+          "gyros_dumbbell_z", "pitch_belt", "gyros_arm_x", "gyros_arm_y")
+TrainingM <- Training[,modl]
+TestM <- Test[,modl[2:12]]
+
+TPartition  <- createDataPartition(TrainingM$classe, p=0.75, list=FALSE)
+TrainM_set <- TrainingM[ TPartition, ]
+TestM_set  <- TrainingM[-TPartition, ]
+```
+
+### 4) Model analysis and prediction.
+
+Now that we have our model data sets ready, we can start analyzing and predicting with our model. We start by setting a seed so that our analysis is reproducible, and then we will do a prediction tree.
+
+```{r}
+fit_tree <- rpart(classe ~ ., data = TrainM_set, method="class")
+fancyRpartPlot(fit_tree)
+```
+
+```{r}
+predict_tree <- predict(fit_tree, newdata = TestM_set, type="class")
+conf_matrix_decision_tree <- confusionMatrix(predict_tree, factor(TestM_set$classe))
+conf_matrix_decision_tree
+```
+
+```{r}
+plot(conf_matrix_decision_tree$table, col = conf_matrix_decision_tree$byClass, 
+     main = paste("Decision Tree Model: Predictive Accuracy =",
+                  round(conf_matrix_decision_tree$overall['Accuracy'], 4)))
+```
+
+Our prediction Accuracy is 0.6215 with this model, which is relative small, but still better than a coin toss. Now we will try to do another type of prediction using Random Forest Model.
+
+```{r}
+set.seed(99999)
+ctrl_RF <- trainControl(method = "repeatedcv", number = 5, repeats = 2)
+fit_RF  <- train(classe ~ ., data = TrainM_set, method = "rf",
+                  trControl = ctrl_RF, verbose = FALSE)
+fit_RF$finalModel
+```
+```{r}
+predict_RF <- predict(fit_RF, newdata = TestM_set)
+conf_matrix_RF <- confusionMatrix(predict_RF, factor(TestM_set$classe))
+conf_matrix_RF
+```
+
+Using the Random Forest Model we get a 93.05 Accuracy, which is way better and the regular Decision Tree Model with 62.15% accuracy.
+
+### 5) Conclusion.
+
+After analyzing our model we decided to use Random Forest Model for predicting our Test set. We calculated a 93.05% accuracy using this model, so we can be confident that we will get a good result, maybe not the best model out there, but it is a good learning model. Now we will see the results of our model with the Test data.
+
+```{r}
+ResultsTestM <- as.data.frame(predict(fit_RF, newdata = TestM))
+ResultsTestM
+```
+
